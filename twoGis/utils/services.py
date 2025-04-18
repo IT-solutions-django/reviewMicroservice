@@ -7,6 +7,7 @@ import random
 from twoGis.utils.setting import SettingRequest
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
+from twoGis.models import GisInformation, GisReview, GisCompanyData
 
 MAX_RETRIES = SettingRequest.MAX_RETRIES.value
 
@@ -23,7 +24,7 @@ def get_2gis_company_data(organization_id):
 
             average_rating = fetched_reviews['meta']['branch_rating']
             count_review = fetched_reviews['meta']['branch_reviews_count']
-            return average_rating, count_review
+            return {'average_rating': average_rating, 'count_review': count_review}
 
         except EmptyReviewList as e:
             print(f"Попытка {attempt + 1}/{MAX_RETRIES} - Ошибка: {e}")
@@ -37,9 +38,7 @@ def get_2gis_company_data(organization_id):
 
 
 def get_2gis_reviews_data(
-        organization_id: str,
-        reviews_limit: int = 10,
-        min_rating: int = 4
+        organization_id: str
 ):
     """
     Получаем информацию об отзывах определенной организации с поддержкой повторных попыток
@@ -54,9 +53,7 @@ def get_2gis_reviews_data(
                 api_key_2gis=api_key_2gis
             )
             result = _get_needed_data_format(
-                fetched_data=fetched_reviews,
-                reviews_limit=reviews_limit,
-                min_rating=min_rating
+                fetched_data=fetched_reviews
             )
             return result
 
@@ -97,9 +94,7 @@ def _fetch_reviews(
 
 
 def _get_needed_data_format(
-        fetched_data: dict[str, dict],
-        reviews_limit: int = 10,
-        min_rating=4
+        fetched_data: dict[str, dict]
 ) -> dict[str, Any]:
     """
     Фильтрация ненужных данных ответа и преобразование нужных в необходимый формат.
@@ -126,38 +121,56 @@ def _get_needed_data_format(
                            ],
                        }
                        for review in fetched_data["reviews"]
-                       if review["rating"] >= min_rating
-                   ][:reviews_limit],
+                   ],
     }
 
 
-@require_GET
-def two_gis_reviews_api(request):
+def two_gis_reviews_model():
     try:
-        organization_id = str(request.GET.get('organization_id'))
-        reviews_limit = int(request.GET.get('limit', 10))
-        min_rating = int(request.GET.get('min_rating', 4))
+        GisReview.objects.all().delete()
 
-        if organization_id:
-            result = get_2gis_reviews_data(organization_id, reviews_limit, min_rating)
-            return JsonResponse({'reviews': result}, status=200)
-        else:
-            return JsonResponse({'reviews': []}, status=400)
-    except Exception:
-        return JsonResponse({'reviews': []}, status=400)
+        companies = GisInformation.objects.all()
+
+        for company in companies:
+            organization_id = company.organization_id
+
+            result = get_2gis_reviews_data(organization_id)
+
+            for res in result['reviews']:
+                review = GisReview(
+                    company=company.company,
+                    rating=res.get('rating', ''),
+                    created_at=res.get('created_at', ''),
+                    review_text=res.get('review_text', ''),
+                    author_name=res.get('author_name', ''),
+                    author_avatar_url=res.get('author_avatar_url', ''),
+                    review_photos=', '.join(res.get('review_photos', '')),
+                )
+                review.save()
+
+    except Exception as e:
+        print(e)
 
 
-@require_GET
-def two_gis_company_api(request):
+def two_gis_company_model():
     try:
-        organization_id = str(request.GET.get('organization_id'))
+        GisCompanyData.objects.all().delete()
 
-        if organization_id:
+        companies = GisInformation.objects.all()
+
+        for company in companies:
+            organization_id = company.organization_id
+
             result = get_2gis_company_data(organization_id)
-            return JsonResponse({'company_data': result}, status=200)
-        else:
-            return JsonResponse({'company_data': []}, status=400)
-    except Exception:
-        return JsonResponse({'company_data': []}, status=400)
+
+            company_data = GisCompanyData(
+                company=company.company,
+                average_rating=result.get('average_rating', ''),
+                reviews_count=result.get('reviews_count', '')
+            )
+            company_data.save()
+
+    except Exception as e:
+        print(e)
 
 

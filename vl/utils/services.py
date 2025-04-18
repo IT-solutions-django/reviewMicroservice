@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from vl.utils.setting import SettingRequest
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
+from vl.models import VlInformation, VlReview, VlCompanyData
 
 
 def get_vl_company_data(organization_slug, organization_id):
@@ -46,9 +47,7 @@ def get_vl_company_data(organization_slug, organization_id):
 
 
 def get_vl_reviews_data(
-        organization_slug: str,
-        limit: int,
-        min_rating: int
+        organization_slug: str
 ):
     """
     Параметры:
@@ -122,49 +121,67 @@ def get_vl_reviews_data(
                     for photo_element in photos_elements:
                         photos.append(photo_element.get('href'))
 
-                if star_rating >= min_rating:
-                    reviews.append({
-                        'rating': star_rating,
-                        'created_at': time_text,
-                        'review_text': review_text,
-                        'author_name': user_name,
-                        'author_avatar_url': user_avatar,
-                        'photos': photos,
-                    })
+                reviews.append({
+                    'rating': star_rating,
+                    'created_at': time_text,
+                    'review_text': review_text,
+                    'author_name': user_name,
+                    'author_avatar_url': user_avatar,
+                    'photos': photos,
+                })
 
-            return reviews[:limit]
+            return reviews
         else:
             return []
     except Exception:
         return []
 
 
-@require_GET
-def vl_reviews_api(request):
+def vl_reviews_model():
     try:
-        organization_slug = request.GET.get('organization_slug')
-        reviews_limit = int(request.GET.get('limit', 10))
-        min_rating = int(request.GET.get('min_rating', 4))
+        VlReview.objects.all().delete()
 
-        if organization_slug:
-            result = get_vl_reviews_data(organization_slug, reviews_limit, min_rating)
-            return JsonResponse({'reviews': result}, status=200)
-        else:
-            return JsonResponse({'reviews': []}, status=400)
-    except Exception:
-        return JsonResponse({'reviews': []}, status=400)
+        companies = VlInformation.objects.all()
+
+        for company in companies:
+            organization_slug = company.organization_slug
+
+            result = get_vl_reviews_data(organization_slug)
+
+            for res in result:
+                review = VlReview(
+                    company=company.company,
+                    rating=res.get('rating', ''),
+                    created_at=res.get('created_at', ''),
+                    review_text=res.get('review_text', ''),
+                    author_name=res.get('author_name', ''),
+                    author_avatar_url=res.get('author_avatar_url', ''),
+                    review_photos=', '.join(res.get('photos', '')),
+                )
+                review.save()
+
+    except Exception as e:
+        print(e)
 
 
-@require_GET
-def vl_company_api(request):
+def vl_company_model():
     try:
-        organization_slug = request.GET.get('organization_slug')
-        organization_id = str(request.GET.get('organization_id'))
+        VlCompanyData.objects.all().delete()
 
-        if organization_slug and organization_id:
+        companies = VlInformation.objects.all()
+
+        for company in companies:
+            organization_slug = company.organization_slug
+            organization_id = company.organization_id
+
             result = get_vl_company_data(organization_slug, organization_id)
-            return JsonResponse({'company_data': result}, status=200)
-        else:
-            return JsonResponse({'company_data': []}, status=400)
-    except Exception:
-        return JsonResponse({'company_data': []}, status=400)
+
+            company_data = VlCompanyData(
+                company=company.company,
+                average_rating=result.get('average_rating', ''),
+                reviews_count=result.get('reviews_count', '')
+            )
+            company_data.save()
+
+    except Exception as e:
+        print(e)

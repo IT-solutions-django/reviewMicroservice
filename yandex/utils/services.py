@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from yandex.utils.setting import SettingRequest
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
+from yandex.models import YandexInformation, YandexReview, YandexCompanyData
 
 
 def get_yandex_company_data(organization_slug, organization_id):
@@ -33,8 +34,6 @@ def get_yandex_company_data(organization_slug, organization_id):
 def get_yandex_reviews_data(
         organization_slug: str,
         organization_id: str,
-        reviews_limit: int,
-        min_rating: int
 ):
     """
     Параметры:
@@ -61,7 +60,7 @@ def get_yandex_reviews_data(
             for review_block in review_blocks:
                 author = review_block.find('div', class_='business-review-view__author-name').find('span').text
                 text = review_block.find('span', class_='business-review-view__body-text').text
-                stars = len(review_block.find('div', class_='business-rating-badge-view__stars').findAll('span'))
+                stars = len(review_block.find('div', class_='business-rating-badge-view__stars').findAll('span', class_='_full'))
 
                 created_at_str = review_block.find('span', class_='business-review-view__date').find('span').text
 
@@ -72,50 +71,68 @@ def get_yandex_reviews_data(
                 photos_blocks = review_block.findAll('img', class_='business-review-media__item-img')
                 photos = [photo_block.get('src') for photo_block in photos_blocks]
 
-                if stars >= min_rating:
-                    reviews.append({
-                        'rating': stars,
-                        'created_at': created_at_str,
-                        'review_text': text,
-                        'author_name': author,
-                        'author_avatar_url': author_avatar,
-                        'review_photos': photos,
-                    })
+                reviews.append({
+                    'rating': stars,
+                    'created_at': created_at_str,
+                    'review_text': text,
+                    'author_name': author,
+                    'author_avatar_url': author_avatar,
+                    'review_photos': photos,
+                })
 
-            return reviews[:reviews_limit]
+            return reviews
 
         return []
     except Exception:
         return []
 
 
-@require_GET
-def yandex_reviews_api(request):
+def yandex_reviews_model():
     try:
-        organization_slug = request.GET.get('organization_slug')
-        organization_id = str(request.GET.get('organization_id'))
-        reviews_limit = int(request.GET.get('limit', 10))
-        min_rating = int(request.GET.get('min_rating', 4))
+        YandexReview.objects.all().delete()
 
-        if organization_slug and organization_id:
-            result = get_yandex_reviews_data(organization_slug, organization_id, reviews_limit, min_rating)
-            return JsonResponse({'reviews': result}, status=200)
-        else:
-            return JsonResponse({'reviews': []}, status=400)
-    except Exception:
-        return JsonResponse({'reviews': []}, status=400)
+        companies = YandexInformation.objects.all()
+
+        for company in companies:
+            organization_slug = company.organization_slug
+            organization_id = company.organization_id
+
+            result = get_yandex_reviews_data(organization_slug, organization_id)
+
+            for res in result:
+                review = YandexReview(
+                    company=company.company,
+                    rating=res.get('rating', ''),
+                    created_at=res.get('created_at', ''),
+                    review_text=res.get('review_text', ''),
+                    author_name=res.get('author_name', ''),
+                    author_avatar_url=res.get('author_avatar_url', ''),
+                    review_photos=', '.join(res.get('review_photos', '')),
+                )
+                review.save()
+
+    except Exception as e:
+        print(e)
 
 
-@require_GET
-def yandex_company_api(request):
+def yandex_company_model():
     try:
-        organization_slug = request.GET.get('organization_slug')
-        organization_id = str(request.GET.get('organization_id'))
+        YandexCompanyData.objects.all().delete()
 
-        if organization_slug and organization_id:
+        companies = YandexInformation.objects.all()
+
+        for company in companies:
+            organization_slug = company.organization_slug
+            organization_id = company.organization_id
+
             result = get_yandex_company_data(organization_slug, organization_id)
-            return JsonResponse({'company_data': result}, status=200)
-        else:
-            return JsonResponse({'company_data': []}, status=400)
-    except Exception:
-        return JsonResponse({'company_data': []}, status=400)
+
+            company_data = YandexCompanyData(
+                company=company.company,
+                average_rating=result.get('average_rating', ''),
+                reviews_count=result.get('reviews_count', '')
+            )
+            company_data.save()
+
+    except Exception as e:
+        print(e)

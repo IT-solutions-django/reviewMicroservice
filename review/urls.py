@@ -16,18 +16,19 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from yandex.utils.services import yandex_reviews_api, yandex_company_api
-from vl.utils.services import vl_reviews_api, vl_company_api
-from twoGis.utils.services import two_gis_reviews_api, two_gis_company_api
+from yandex.views import yandex_reviews_api, yandex_company_api
+from vl.views import vl_reviews_api, vl_company_api
+from twoGis.views import gis_reviews_api, gis_company_api
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
     path('api/yandex-reviews/', yandex_reviews_api, name='yandex-reviews'),
-    path('api/yandex-company/', yandex_company_api, name='yandex-company'),
+    path('api/yandex-data/', yandex_company_api, name='yandex-data'),
 
     path('api/vl-reviews/', vl_reviews_api, name='vl-reviews'),
-    path('api/vl-company/', vl_company_api, name='vl-company'),
+    path('api/vl-data/', vl_company_api, name='vl-data'),
 
-    path('api/twoGis-reviews/', two_gis_reviews_api, name='twoGis-reviews'),
-    path('api/twoGis-company/', two_gis_company_api, name='twoGis-company')
+    path('api/twoGis-reviews/', gis_reviews_api, name='twoGis-reviews'),
+    path('api/twoGis-data/', gis_company_api, name='twoGis-data')
 ]
